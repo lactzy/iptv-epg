@@ -2,7 +2,7 @@ FROM node:22-alpine
 ARG GIT_REPO=https://github.com/lactzy/musortv-epg.git
 ARG GIT_BRANCH=master
 ARG WORKDIR=/musortv-epg
-ENV CRON_SCHEDULE="0 0 * * *"
+ENV CRON_SCHEDULE="0 2 * * *"
 ENV GZIP=false
 ENV MAX_CONNECTIONS=1
 ENV DAYS=
