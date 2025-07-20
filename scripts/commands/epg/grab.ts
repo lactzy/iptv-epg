@@ -4,6 +4,8 @@ import { QueueCreator, Job, ChannelsParser } from '../../core'
 import { Channel } from 'epg-grabber'
 import path from 'path'
 import { SITES_DIR } from '../../constants'
+import * as http from 'http'
+import * as fs from 'fs'
 
 program
   .addOption(new Option('-s, --site <name>', 'Name of the site to parse'))
@@ -61,6 +63,48 @@ export type GrabOptions = {
 
 const options: GrabOptions = program.opts()
 
+function isUrl(url: string): boolean {
+    if (!url) return false
+    const pattern = new RegExp('^(https?:\\/\\/)?' + // protocol
+        '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|' + // domain name
+        '((\\d{1,3}\\.){3}\\d{1,3}))|' + // OR ip (v4) address
+        'localhost' + // OR localhost
+        '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*' + // port and path
+        '(\\?[;&a-z\\d%_.~+=-]*)?' + // query string
+        '(\\#[-a-z\\d_]*)?$', 'i') // fragment locator
+    return pattern.test(url)
+}
+
+async function downloadFile(url: string, targetFile: string) {
+  return await new Promise((resolve, reject) => {
+    http.get(url, (response: http.IncomingMessage) => {
+      const code = response.statusCode ?? 0
+
+      if (code >= 400) {
+        return reject(new Error(response.statusMessage))
+      }
+
+      // handle redirects
+      if (code > 300 && code < 400 && !!response.headers.location) {
+        return resolve(
+          downloadFile(response.headers.location, targetFile)
+        )
+      }
+
+      // save the file to disk
+      const fileWriter = fs
+        .createWriteStream(targetFile)
+        .on('finish', () => {
+          resolve({})
+        })
+
+      response.pipe(fileWriter)
+    }).on('error', (error: Error) => {
+      reject(error)
+    })
+  })
+}
+
 async function main() {
   if (!options.site && !options.channels)
     throw new Error('One of the arguments must be presented: `--site` or `--channels`')
@@ -82,7 +126,13 @@ async function main() {
     pattern = pattern.replace(/\\/g, '/')
     files = await storage.list(pattern)
   } else if (options.channels) {
-    files = await storage.list(options.channels)
+    if (isUrl(options.channels)) {
+      await downloadFile(options.channels, 'channels.xml')
+      files = await storage.list('channels.xml')
+    }
+    else{
+      files = await storage.list(options.channels)
+    }
   }
 
   let parsedChannels = new Collection()
